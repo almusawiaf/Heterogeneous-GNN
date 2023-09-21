@@ -10,19 +10,6 @@ from torch_geometric.nn import GCNConv, SAGEConv
 import torch.nn.functional as F
 from torch.nn import Linear
 
-class GCNRegression(torch.nn.Module):
-    def __init__(self, num_features, hidden_channel=16):
-        super().__init__()
-        self.conv1 = GCNConv(num_features, hidden_channel)
-        self.fc = nn.Linear(hidden_channel, 1)  # Output layer with one neuron for regression
-
-    def forward(self, data):
-        x, edge_index = data.x, data.edge_index
-        x = self.conv1(x, edge_index)
-        x = self.fc(x)  # Linear activation for regression
-        return x  # Return the continuous prediction
-
-
 class GCN(torch.nn.Module):
     def __init__(self, num_features, num_classes, hidden_channel=16):
         super().__init__()
@@ -116,15 +103,13 @@ class GCN3(torch.nn.Module):
   
 
 class SAGE(torch.nn.Module):
-    def __init__(self, num_features, num_classes, hidden_channel=16):
+    def __init__(self, num_features, num_classes, hidden_channel=4):
         super(SAGE, self).__init__()
-        self.conv1 = GCNConv(num_features, hidden_channel, aggr="mean")
-        self.conv2 = SAGEConv(hidden_channel, num_classes, aggr="mean") # max, mean, add ...)
+        self.conv1 = SAGEConv(num_features, num_classes, aggr="mean") # max, mean, add ...)
         # self.conv2 = SAGEConv(hidden_channel, num_classes, aggr="mean") # max, mean, add ...)
 
     def forward(self, data):
         x = self.conv1(data.x, data.edge_index)
-        x = self.conv2(x, data.edge_index)
         # x = self.conv2(x, data.edge_index)
         return F.log_softmax(x, dim=1)
     
