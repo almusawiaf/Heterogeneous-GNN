@@ -2,15 +2,15 @@
 
 import numpy as np
 import pandas as pd
-import pickle
 import random
-import os
 import torch
 import matplotlib.pyplot as plt
-from torch_geometric.data import Data
 import torch_geometric.transforms as T
 import networkx as nx 
 from torch_geometric.utils.convert import from_networkx
+import os
+import pickle
+from torch_geometric.data import Data
 
 
 # - X1, A1 are feature set and similarity matrix of Medications
@@ -204,3 +204,10 @@ def plot_scatter(X, y):
 #     split = T.RandomNodeSplit(num_val=0.1, num_test=0.2)
 #     data = split(data)
 #     return data
+
+
+
+
+
+
+# ---------------------------------------------------------------------------
