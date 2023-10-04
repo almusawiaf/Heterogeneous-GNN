@@ -3,6 +3,7 @@ import pandas as pd
 import networkx as nx 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
+import pickle
 
 # from torch_geometric.utils.convert import from_networkx
 # from sklearn.model_selection import train_test_split
@@ -115,33 +116,6 @@ def heatmap(A, caption):
     # Show the heatmap
     plt.show()    
 
-
-# ----------------------------------------------------------------------------
-folder_path = 'Data/MIMIC resources'
-
-df_Admissions = pd.read_csv(f'{folder_path}/ADMISSIONS.csv')
-
-df_Patients = pd.read_csv(f'{folder_path}/PATIENTS.csv')
-
-# medication!
-df_Prescription = pd.read_csv(f'{folder_path}/PRESCRIPTIONS.csv')
-
-# Diagnosis!
-df_DiagnosisICD = pd.read_csv(f'{folder_path}/DIAGNOSES_ICD.csv')
-
-# Procedures!
-df_ProceduresICD = pd.read_csv(f'{folder_path}/PROCEDURES_ICD.csv')
-# ICUStays
-df_Icustays = pd.read_csv(f'{folder_path}/ICUSTAYS.csv')
-
-
-df_ProceduresICD.dropna(subset=['ICD9_CODE'], inplace=True)
-df_Prescription.dropna(subset=['drug'], inplace=True)
-df_DiagnosisICD.dropna(subset=['ICD9_CODE'], inplace=True)
-
-
-
-
 # ----------------------------------------------------------------------------
 # convert all procedure codes into two digits only
 # convert all diagnosis codes into three digits only
@@ -151,155 +125,236 @@ def extract3(code):
 def extract2(code):
     return str(code)[:2]
 
-df_DiagnosisICD['ICD9_CODE'] = df_DiagnosisICD['ICD9_CODE'].apply(extract3)
-df_ProceduresICD['ICD9_CODE'] = df_ProceduresICD['ICD9_CODE'].apply(extract2)
 
-df_ProceduresICD
+# reading the nodes
+def reading_pickle(filename):
+    with open(filename, 'rb') as f:
+        x = pickle.load(f)
+    return x
+
+
+# Saving the labels
+def saving_results(my_file, filename):
+    with open(filename, 'wb') as file:
+        pickle.dump(my_file, file)
+    print(f'Saving complete...{filename}')
 
 
 
-# ----------------------------------------------------------------------------
+def extracting_patient_visit_labels():
+    Patients    = reading_pickle('Data/symmetricPath/patients.pickle')
+    Visits      = reading_pickle('Data/symmetricPath/visits.pickle')
+    Diagnosis   = reading_pickle('Data/symmetricPath/diagnosis.pickle')
 
-Procedures = sorted(df_ProceduresICD['ICD9_CODE'].unique())
-Medication = sorted(df_Prescription['drug'].unique())
-Diagnosis  = df_DiagnosisICD['ICD9_CODE'].unique()
-Patients = df_Patients['SUBJECT_ID'].unique()
-Admissions = df_Admissions['HADM_ID'].unique()
+    # reading the graphs!
+    G_CV = nx.read_gml('Data/gmls/CV.gml')
+    G_VD = nx.read_gml('Data/gmls/VD.gml')
 
-print(f'Number of Patients = {len(Patients)}')
+    Patient_label = {}
+    Visit_label = {}
+    for patient in Patients:
+        Ds = []
+        Visits = list(G_CV.neighbors(patient))
+        for visit in Visits:
+            D = []
+            for diagnosis in Diagnosis:
+                if G_VD.has_edge(visit, diagnosis):
+                    D.append(1)
+                else:
+                    D.append(0)
+            Visit_label[visit] = D
+            Ds.append(D)
+        finalD = np.array([1 for _ in range(len(Diagnosis))])
+        for d in Ds:
+            finalD = finalD * np.array(d).T
+        Patient_label[patient] = finalD
+        print(f'Patient ({patient})')
 
-print(f'Number of Admissions = {len(Admissions)}')
+    print(Patients[0], Patient_label[Patients[0]])
 
-print(f'Number of Diagnosis = {len(Diagnosis)}')
+    saving_results(Patient_label, 'Data/labels/patient_labels.pickle')
+    saving_results(Visit_label, 'Data/labels/visit_labels.pickle')
 
-print(f'Number of procedures = {len(Procedures)}')
 
-print(f'Number of Medication = {len(Medication)}')
-# ----------------------------------------------------------------------------
-# # restricting to LUNG disease
-# ICD_Diagnosis_Lung = [i for i in Diagnosis if str(i).startswith('162')]
 
-df_sub = df_DiagnosisICD[df_DiagnosisICD['ICD9_CODE'].str.startswith('162')]
 
-df_sub = df_sub[['SUBJECT_ID',	'HADM_ID']].dropna(subset=['HADM_ID'])
-# ----------------------------------------------------------------------------
-Patients = df_sub['SUBJECT_ID'].unique()
-Admissions = df_sub['HADM_ID'].unique()
 
-print(f'Number of Patients = {len(Patients)}')
-print(f'Number of Admission = {len(Admissions)}')
-# ----------------------------------------------------------------------------
-newDF = df_Admissions[df_Admissions['HADM_ID'].isin(Admissions)]
-newDF = newDF[['SUBJECT_ID','HADM_ID','ADMITTIME', 'DISCHTIME', 'DEATHTIME', 'HOSPITAL_EXPIRE_FLAG']]
+if __name__ == "__name__":
+    # ----------------------------------------------------------------------------
+    folder_path = 'Data/MIMIC resources'
 
-newDF['ADMITTIME'] = pd.to_datetime(newDF['ADMITTIME'])
-newDF['DISCHTIME'] = pd.to_datetime(newDF['DISCHTIME'])
+    df_Admissions = pd.read_csv(f'{folder_path}/ADMISSIONS.csv')
 
-newDF['LOS'] = (newDF['DISCHTIME']-newDF['ADMITTIME']).dt.days
-# ----------------------------------------------------------------------------
-df = newDF
-df['ADMITTIME'] = pd.to_datetime(df['ADMITTIME'])
-df['DEATHTIME'] = pd.to_datetime(df['DEATHTIME'])
+    df_Patients = pd.read_csv(f'{folder_path}/PATIENTS.csv')
 
-# Filter rows with the least ADMITTIME per SUBJECT_ID
-admit_df = df.sort_values('ADMITTIME').groupby('SUBJECT_ID').head(1)
+    # medication!
+    df_Prescription = pd.read_csv(f'{folder_path}/PRESCRIPTIONS.csv')
 
-admit_df = admit_df[['SUBJECT_ID','ADMITTIME']]
+    # Diagnosis!
+    df_DiagnosisICD = pd.read_csv(f'{folder_path}/DIAGNOSES_ICD.csv')
 
-death_df = df[df['DEATHTIME'].notnull()].sort_values('DEATHTIME').groupby('SUBJECT_ID').head(1)
+    # Procedures!
+    df_ProceduresICD = pd.read_csv(f'{folder_path}/PROCEDURES_ICD.csv')
+    # ICUStays
+    df_Icustays = pd.read_csv(f'{folder_path}/ICUSTAYS.csv')
 
-death_df = death_df[['SUBJECT_ID','DEATHTIME']]
 
-final_df = admit_df.merge(death_df, on='SUBJECT_ID', how='outer').sort_values(by='SUBJECT_ID')
+    df_ProceduresICD.dropna(subset=['ICD9_CODE'], inplace=True)
+    df_Prescription.dropna(subset=['drug'], inplace=True)
+    df_DiagnosisICD.dropna(subset=['ICD9_CODE'], inplace=True)
 
-Patients = final_df['SUBJECT_ID'].unique()
 
-final_df.to_csv('Data/survival.csv')
-# ----------------------------------------------------------------------------
-# Filter rows with non-null DEATHTIME and extract SUBJECT_ID values
-dead = final_df[final_df['DEATHTIME'].notnull()]['SUBJECT_ID'].tolist()
-dead_patients = [f'C_{i}' for i in dead]
-# ----------------------------------------------------------------------------
-# Edge Extractions
-VisitDict      = getDict(Patients, df_sub, 'SUBJECT_ID', 'HADM_ID')
 
-VisitNodes, PatientVisit = getNodes_and_Edges(VisitDict)
-print(f'Total number of patient-visit = {len(PatientVisit)}')
 
-DiagnosisDict  = getDict(VisitNodes, df_DiagnosisICD, 'HADM_ID', 'ICD9_CODE')
-DiagnosisNodes, VisitDiagnosis = getNodes_and_Edges(DiagnosisDict)
-print(f'Total number of Visit-Diagnosis = {len(VisitDiagnosis)}')
+    df_DiagnosisICD['ICD9_CODE'] = df_DiagnosisICD['ICD9_CODE'].apply(extract3)
+    df_ProceduresICD['ICD9_CODE'] = df_ProceduresICD['ICD9_CODE'].apply(extract2)
 
-ProcedureDict  = getDict(VisitNodes, df_ProceduresICD, 'HADM_ID', 'ICD9_CODE')
-ProcedureNodes, VisitProcedure = getNodes_and_Edges(ProcedureDict)
-print(f'Total number of Visit-Procedure = {len(VisitProcedure)}')
+    df_ProceduresICD
 
-MedicationDict = getDict(VisitNodes, df_Prescription, 'hadm_id', 'drug')
-MedicationNodes, VisitMedication = getNodes_and_Edges(MedicationDict)
-print(f'Total number of Visit-Medication = {len(VisitMedication)}')
 
-ICUSTAYDict = getDict(VisitNodes, df_Prescription, 'hadm_id', 'icustay_id')
-ICUSTAYNodes, VisitICUSTAY = getNodes_and_Edges(ICUSTAYDict)
-print(f'Total number of Visit-ICUSTAY = {len(VisitICUSTAY)}')
 
-# # -----------------------------------------------------------------------------
-# ICUSTAY_MedicationDict = getDict(ICUSTAYNodes, df_Prescription, 'icustay_id', 'drug')
-# _, ICUSTAY_Medication = getNodes_and_Edges(ICUSTAY_MedicationDict)
-# print(f'Total number of ICUSTAY-Medication = {len(ICUSTAY_Medication)}')
-# ----------------------------------------------------------------------------
-# Mapping function for Nodes and edges
-# # c, C : Patients
-# v, V : visits
-# d, D : Diagnosis
-# p, P : Procedure
-# m, M : Medication
-# i, I : ICUSTAY
+    # ----------------------------------------------------------------------------
 
-CV_edges = [[f'C_{u}', f'V_{v}'] for u,v in PatientVisit]
-VD_edges = [[f'V_{u}', f'D_{v}'] for u,v in VisitDiagnosis]
-VP_edges = [[f'V_{u}', f'P_{v}'] for u,v in VisitProcedure]
-VM_edges = [[f'V_{u}', f'M_{v}'] for u,v in VisitMedication]
-VI_edges = [[f'V_{u}', f'I_{v}'] for u,v in VisitICUSTAY]
-# IM_edges = [[f'I_{u}', f'M_{v}'] for u,v in ICUSTAY_Medication]
-# ----------------------------------------------------------------------------
+    Procedures = sorted(df_ProceduresICD['ICD9_CODE'].unique())
+    Medication = sorted(df_Prescription['drug'].unique())
+    Diagnosis  = df_DiagnosisICD['ICD9_CODE'].unique()
+    Patients = df_Patients['SUBJECT_ID'].unique()
+    Admissions = df_Admissions['HADM_ID'].unique()
 
-edge_index = CV_edges + VD_edges + VP_edges + VM_edges #+ VI_edges
+    print(f'Number of Patients = {len(Patients)}')
 
-tempG = nx.Graph()
-tempG.add_edges_from(edge_index)
+    print(f'Number of Admissions = {len(Admissions)}')
 
-Nodes = list(tempG.nodes())
-N = len(Nodes)
+    print(f'Number of Diagnosis = {len(Diagnosis)}')
 
-C_Nodes = [v for v in Nodes if v[0]=='C']
-V_Nodes = [v for v in Nodes if v[0]=='V']
-M_Nodes = [v for v in Nodes if v[0]=='M']
-D_Nodes = [v for v in Nodes if v[0]=='D']
-P_Nodes = [v for v in Nodes if v[0]=='P']
+    print(f'Number of procedures = {len(Procedures)}')
 
-CV = nx.Graph()
-CV.add_nodes_from(C_Nodes)
-CV.add_nodes_from(V_Nodes)
-CV.add_edges_from(CV_edges)
-nx.write_gml(CV, 'Data/gmls/CV.gml')
+    print(f'Number of Medication = {len(Medication)}')
+    # ----------------------------------------------------------------------------
+    # # restricting to LUNG disease
+    # ICD_Diagnosis_Lung = [i for i in Diagnosis if str(i).startswith('162')]
 
-VM = nx.Graph()
-VM.add_nodes_from(V_Nodes)
-VM.add_nodes_from(M_Nodes)
-VM.add_edges_from(VM_edges)
-nx.write_gml(VM, 'Data/gmls/VM.gml')
+    df_sub = df_DiagnosisICD[df_DiagnosisICD['ICD9_CODE'].str.startswith('162')]
 
-VD = nx.Graph()
-VD.add_nodes_from(V_Nodes)
-VD.add_nodes_from(D_Nodes)
-VD.add_edges_from(VD_edges)
-nx.write_gml(VD, 'Data/gmls/VD.gml')
+    df_sub = df_sub[['SUBJECT_ID',	'HADM_ID']].dropna(subset=['HADM_ID'])
+    # ----------------------------------------------------------------------------
+    Patients = df_sub['SUBJECT_ID'].unique()
+    Admissions = df_sub['HADM_ID'].unique()
 
-VR = nx.Graph()
-VR.add_nodes_from(V_Nodes)
-VR.add_nodes_from(P_Nodes)
-VR.add_edges_from(VP_edges)
-nx.write_gml(VR, 'Data/gmls/VP.gml')
+    print(f'Number of Patients = {len(Patients)}')
+    print(f'Number of Admission = {len(Admissions)}')
+    # ----------------------------------------------------------------------------
+    newDF = df_Admissions[df_Admissions['HADM_ID'].isin(Admissions)]
+    newDF = newDF[['SUBJECT_ID','HADM_ID','ADMITTIME', 'DISCHTIME', 'DEATHTIME', 'HOSPITAL_EXPIRE_FLAG']]
+
+    newDF['ADMITTIME'] = pd.to_datetime(newDF['ADMITTIME'])
+    newDF['DISCHTIME'] = pd.to_datetime(newDF['DISCHTIME'])
+
+    newDF['LOS'] = (newDF['DISCHTIME']-newDF['ADMITTIME']).dt.days
+    # ----------------------------------------------------------------------------
+    df = newDF
+    df['ADMITTIME'] = pd.to_datetime(df['ADMITTIME'])
+    df['DEATHTIME'] = pd.to_datetime(df['DEATHTIME'])
+
+    # Filter rows with the least ADMITTIME per SUBJECT_ID
+    admit_df = df.sort_values('ADMITTIME').groupby('SUBJECT_ID').head(1)
+
+    admit_df = admit_df[['SUBJECT_ID','ADMITTIME']]
+
+    death_df = df[df['DEATHTIME'].notnull()].sort_values('DEATHTIME').groupby('SUBJECT_ID').head(1)
+
+    death_df = death_df[['SUBJECT_ID','DEATHTIME']]
+
+    final_df = admit_df.merge(death_df, on='SUBJECT_ID', how='outer').sort_values(by='SUBJECT_ID')
+
+    Patients = final_df['SUBJECT_ID'].unique()
+
+    final_df.to_csv('Data/survival.csv')
+    # ----------------------------------------------------------------------------
+    # Filter rows with non-null DEATHTIME and extract SUBJECT_ID values
+    dead = final_df[final_df['DEATHTIME'].notnull()]['SUBJECT_ID'].tolist()
+    dead_patients = [f'C_{i}' for i in dead]
+    # ----------------------------------------------------------------------------
+    # Edge Extractions
+    VisitDict      = getDict(Patients, df_sub, 'SUBJECT_ID', 'HADM_ID')
+
+    VisitNodes, PatientVisit = getNodes_and_Edges(VisitDict)
+    print(f'Total number of patient-visit = {len(PatientVisit)}')
+
+    DiagnosisDict  = getDict(VisitNodes, df_DiagnosisICD, 'HADM_ID', 'ICD9_CODE')
+    DiagnosisNodes, VisitDiagnosis = getNodes_and_Edges(DiagnosisDict)
+    print(f'Total number of Visit-Diagnosis = {len(VisitDiagnosis)}')
+
+    ProcedureDict  = getDict(VisitNodes, df_ProceduresICD, 'HADM_ID', 'ICD9_CODE')
+    ProcedureNodes, VisitProcedure = getNodes_and_Edges(ProcedureDict)
+    print(f'Total number of Visit-Procedure = {len(VisitProcedure)}')
+
+    MedicationDict = getDict(VisitNodes, df_Prescription, 'hadm_id', 'drug')
+    MedicationNodes, VisitMedication = getNodes_and_Edges(MedicationDict)
+    print(f'Total number of Visit-Medication = {len(VisitMedication)}')
+
+    ICUSTAYDict = getDict(VisitNodes, df_Prescription, 'hadm_id', 'icustay_id')
+    ICUSTAYNodes, VisitICUSTAY = getNodes_and_Edges(ICUSTAYDict)
+    print(f'Total number of Visit-ICUSTAY = {len(VisitICUSTAY)}')
+
+    # # -----------------------------------------------------------------------------
+    # ICUSTAY_MedicationDict = getDict(ICUSTAYNodes, df_Prescription, 'icustay_id', 'drug')
+    # _, ICUSTAY_Medication = getNodes_and_Edges(ICUSTAY_MedicationDict)
+    # print(f'Total number of ICUSTAY-Medication = {len(ICUSTAY_Medication)}')
+    # ----------------------------------------------------------------------------
+    # Mapping function for Nodes and edges
+    # # c, C : Patients
+    # v, V : visits
+    # d, D : Diagnosis
+    # p, P : Procedure
+    # m, M : Medication
+    # i, I : ICUSTAY
+
+    CV_edges = [[f'C_{u}', f'V_{v}'] for u,v in PatientVisit]
+    VD_edges = [[f'V_{u}', f'D_{v}'] for u,v in VisitDiagnosis]
+    VP_edges = [[f'V_{u}', f'P_{v}'] for u,v in VisitProcedure]
+    VM_edges = [[f'V_{u}', f'M_{v}'] for u,v in VisitMedication]
+    VI_edges = [[f'V_{u}', f'I_{v}'] for u,v in VisitICUSTAY]
+    # IM_edges = [[f'I_{u}', f'M_{v}'] for u,v in ICUSTAY_Medication]
+    # ----------------------------------------------------------------------------
+
+    edge_index = CV_edges + VD_edges + VP_edges + VM_edges #+ VI_edges
+
+    tempG = nx.Graph()
+    tempG.add_edges_from(edge_index)
+
+    Nodes = list(tempG.nodes())
+    N = len(Nodes)
+
+    C_Nodes = [v for v in Nodes if v[0]=='C']
+    V_Nodes = [v for v in Nodes if v[0]=='V']
+    M_Nodes = [v for v in Nodes if v[0]=='M']
+    D_Nodes = [v for v in Nodes if v[0]=='D']
+    P_Nodes = [v for v in Nodes if v[0]=='P']
+
+    CV = nx.Graph()
+    CV.add_nodes_from(C_Nodes)
+    CV.add_nodes_from(V_Nodes)
+    CV.add_edges_from(CV_edges)
+    nx.write_gml(CV, 'Data/gmls/CV.gml')
+
+    VM = nx.Graph()
+    VM.add_nodes_from(V_Nodes)
+    VM.add_nodes_from(M_Nodes)
+    VM.add_edges_from(VM_edges)
+    nx.write_gml(VM, 'Data/gmls/VM.gml')
+
+    VD = nx.Graph()
+    VD.add_nodes_from(V_Nodes)
+    VD.add_nodes_from(D_Nodes)
+    VD.add_edges_from(VD_edges)
+    nx.write_gml(VD, 'Data/gmls/VD.gml')
+
+    VR = nx.Graph()
+    VR.add_nodes_from(V_Nodes)
+    VR.add_nodes_from(P_Nodes)
+    VR.add_edges_from(VP_edges)
+    nx.write_gml(VR, 'Data/gmls/VP.gml')
 
 
 

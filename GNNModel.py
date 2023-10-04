@@ -50,6 +50,22 @@ class GCN4(torch.nn.Module):
         return F.log_softmax(x, dim=1)
     
 
+class GCN_MLC(torch.nn.Module):
+    '''Multi-label classification GNN model'''
+    def __init__(self, num_features, hidden_channel=16):
+        super().__init__()
+        self.conv1 = GCNConv(num_features, hidden_channel)
+        self.fc = torch.nn.Linear(hidden_channel, 1)
+
+    def forward(self, data):
+        x, edge_index = data.x, data.edge_index
+        x = self.conv1(x, edge_index)
+        x = F.relu(x)  # Apply ReLU activation to hidden layer
+        x = self.fc(x).squeeze()  # Linear layer with sigmoid activation
+        return x
+
+
+
 class GCN1(torch.nn.Module):
     def __init__(self,  num_features, num_classes, hidden_channel=16):
         super().__init__()
