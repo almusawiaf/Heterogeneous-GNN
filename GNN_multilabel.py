@@ -1,17 +1,33 @@
 import pandas as pd
 import torch
-from sklearn.metrics import confusion_matrix, f1_score, precision_score, average_precision_score
+from sklearn.metrics import confusion_matrix, f1_score, multilabel_confusion_matrix, precision_score, average_precision_score
 import torch.nn as nn
 import matplotlib.pyplot as plt
+from sklearn.metrics import classification_report
+from torch_geometric.nn import GCNConv, SAGEConv
+import torch.nn.functional as F
+from torch.nn import Linear
 
 # Check if a GPU is available, otherwise use CPU
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 
-from torch_geometric.nn import GCNConv, SAGEConv
-import torch.nn.functional as F
-from torch.nn import Linear
+
+class GCN_MLC(torch.nn.Module):
+    '''Multi-label classification GNN model'''
+    def __init__(self, num_features, num_classes, hidden_channel=16):
+        super().__init__()
+        self.conv1 = GCNConv(num_features, hidden_channel)
+        self.fc = torch.nn.Linear(hidden_channel, num_classes)
+
+    def forward(self, data):
+        x, edge_index = data.x, data.edge_index
+        x = self.conv1(x, edge_index)
+        x = F.relu(x)  # Apply ReLU activation to hidden layer
+        x = self.fc(x)  # Linear layer with sigmoid activation
+        return x
+
 
 class GCNRegression(torch.nn.Module):
     def __init__(self, num_features, hidden_channel=16):
@@ -52,6 +68,9 @@ class GCN4(torch.nn.Module):
         x = self.conv1(x, edge_index)
         return F.log_softmax(x, dim=1)
     
+
+
+
 
 class GCN1(torch.nn.Module):
     def __init__(self,  num_features, num_classes, hidden_channel=16):
@@ -142,14 +161,16 @@ def train_node_classifier(model, graph, optimizer, criterion, n_epochs=200):
         model.train()
         optimizer.zero_grad()
         out = model(graph)
+
         # print(out.shape)
         # print(graph.y.shape)
+
         loss = criterion(out[graph.train_mask], graph.y[graph.train_mask])
         loss.backward()
         optimizer.step()
 
         # pred = out.argmax(dim=1)
-        acc, val_loss = eval_node_classifier(model, graph, graph.val_mask, criterion)
+        acc, val_loss = eval_node_classifier(model, graph, criterion)
 
         L_train.append(loss.item())
         L_val.append(val_loss)
@@ -161,17 +182,23 @@ def train_node_classifier(model, graph, optimizer, criterion, n_epochs=200):
     return model, df
 
 
-def eval_node_classifier(model, graph, mask, criterion=nn.CrossEntropyLoss()):
+def eval_node_classifier(model, graph, criterion=nn.CrossEntropyLoss()):
+    mask = graph.val_mask
     model.eval()
     with torch.no_grad():
-        outputs = model(graph)
-        loss = criterion(outputs[mask], graph.y[mask])
-        pred = outputs.argmax(dim=1)
+        out = model(graph)
+        loss    = criterion(out[mask], graph.y[mask])
+
+        # pred    = out.argmax(dim=1)
+        pred    = out
+        
+        # print(pred.shape)
+        # print(graph.y.shape)   
+
         correct = (pred[mask] == graph.y[mask]).sum()
-        acc = int(correct) / int(mask.sum())
+        acc     = int(correct) / int(mask.sum())
+
     return acc, loss.item()
-
-
 
 
 def create_confusion_matrix(predicted, true_labels):
@@ -180,7 +207,40 @@ def create_confusion_matrix(predicted, true_labels):
     print('F1 score = ', f1_score(true_labels, predicted, average='macro'))
     print('Precision score = ', precision_score(true_labels, predicted, average='macro'))
     print('AUC Precision score = ', average_precision_score(true_labels, predicted, average='macro'))
-    
+
+
+def create_multilabel_confusion_matrix(pred, correct):
+    # Compute the classification report
+    classification_rep = classification_report(correct, pred)
+    print(classification_rep)
+
+    # Calculate the multilabel confusion matrix
+    mcm = multilabel_confusion_matrix(correct, pred)
+
+    # Calculate F1 score, precision score, and AUC Precision score for each label
+    f1_scores = f1_score(correct, pred, average=None)
+    precision_scores = precision_score(correct, pred, average=None)
+    auc_precision_scores = average_precision_score(correct, pred, average=None)
+
+    # Calculate macro-averaged metrics
+    macro_f1 = f1_score(correct, pred, average='macro', zero_division=1)
+    macro_precision = precision_score(correct, pred, average='macro')
+    macro_auc_precision = average_precision_score(correct, pred, average='macro')
+
+    # Calculate micro-averaged metrics
+    micro_f1 = f1_score(correct, pred, average='micro')
+    micro_precision = precision_score(correct, pred, average='micro')
+    micro_auc_precision = average_precision_score(correct, pred, average='micro')
+
+    print("Macro-Averaged Metrics:")
+    print(f"Macro-Averaged F1 score = {macro_f1}")
+    print(f"Macro-Averaged Precision score = {macro_precision}")
+    print(f"Macro-Averaged AUC Precision score = {macro_auc_precision}\n")
+
+    print("Micro-Averaged Metrics:")
+    print(f"Micro-Averaged F1 score = {micro_f1}")
+    print(f"Micro-Averaged Precision score = {micro_precision}")
+    print(f"Micro-Averaged AUC Precision score = {micro_auc_precision}\n")
 
 def plt_performance(df):
     # Plot the DataFrame
