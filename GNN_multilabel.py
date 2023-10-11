@@ -29,6 +29,20 @@ class GCN_MLC(torch.nn.Module):
         return x
 
 
+class SAGE_MLC(torch.nn.Module):
+    def __init__(self, num_features, num_classes, hidden_channel=16):
+        super().__init__()
+        self.conv1 = SAGEConv(num_features, hidden_channel, aggr="mean") # max, mean, add ...)
+        self.fc = torch.nn.Linear(hidden_channel, num_classes)
+
+    def forward(self, data):
+        x, edge_index = data.x, data.edge_index
+        x = self.conv1(x, edge_index)
+        x = F.relu(x)  # Apply ReLU activation to hidden layer
+        x = self.fc(x)  # Linear layer with sigmoid activation
+        return x
+
+    
 class GCNRegression(torch.nn.Module):
     def __init__(self, num_features, hidden_channel=16):
         super().__init__()
@@ -231,6 +245,12 @@ def create_multilabel_confusion_matrix(pred, correct):
     micro_f1 = f1_score(correct, pred, average='micro')
     micro_precision = precision_score(correct, pred, average='micro')
     micro_auc_precision = average_precision_score(correct, pred, average='micro')
+
+    print("Averaged Metrics:")
+    print(f"Averaged F1 score = {f1_scores}")
+    print(f"Averaged Precision score = {precision_scores}")
+    print(f"Averaged AUC Precision score = {auc_precision_scores}\n")
+
 
     print("Macro-Averaged Metrics:")
     print(f"Macro-Averaged F1 score = {macro_f1}")
